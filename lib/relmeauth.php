@@ -24,7 +24,7 @@ require dirname(__FILE__) . '/config.php';
 class relmeauth {
   function __construct() {
     session_start();
-    $this->tmhOAuth = new tmhOAuth(array());
+    $this->tmhOAuth = new tmhOAuth(array('curl_followlocation' => true));
   }
 
   function is_loggedin() {
@@ -47,6 +47,10 @@ class relmeauth {
   }
 
   function main($user_url, $askwrite) {
+
+    //get the actual location of the URL
+    $user_url = $this->deref_redirect($user_url);
+
     // first try to authenticate directly with the URL given
     if ($this->is_provider($user_url)) {
       $_SESSION['relmeauth']['direct'] = true;
@@ -179,12 +183,14 @@ class relmeauth {
     $this->tmhOAuth->config['consumer_secret'] = $keys['consumer_secret'];
     $this->tmhOAuth->config['user_token']      = @$keys['user_token'];
     $this->tmhOAuth->config['user_secret']     = @$keys['user_secret'];
+    echo "debug2:$method:$url:".print_r($params,true).":$userauth<br>";
     $code = $this->tmhOAuth->request(
       $method,
       $url,
       $params,
       $useauth
     );
+    echo 'debug3:'.$code.'<br>';
 
     return ( $code == 200 );
   }
@@ -220,7 +226,8 @@ class relmeauth {
    * @return false if authentication failed
    * @author Matt Harris and Tantek Çelik
    */
-  function authenticate_url($confirmed_rel, $askwrite) {
+  function authenticate_url($confirmed_rel, $askwrite=false) {
+      echo "called authenticate_url($confirmed_rel, $askwrite)<br>";
     global $providers;
 
     if (!$this->is_provider($confirmed_rel))
@@ -394,7 +401,7 @@ class relmeauth {
     $othermes = $this->discover($source_rel, false);
     $_SESSION['relmeauth']['debug']['source_rels'][$source_rel] = $othermes;
     if (is_array( $othermes)) {
-      $othermes = array_map(array('relmeauth', 'normalise_url'), $othermes);
+      $othermes = array_map(array('relmeauth', 'deref_redirect'), $othermes);
       $user_url = self::normalise_url($user_url);
 
       if (in_array($user_url, $othermes)) {
@@ -720,6 +727,27 @@ class relmeauth {
         $url = $url . '/';
 
      return strtolower($url);
+   }
+
+   function deref_redirect($url){
+        $ch = curl_init($url);
+
+        if(!$ch){
+            $this->error('error with curl_init');
+            return $url;
+        }
+
+        //$agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_1) AppleWebKit/537.73.11 (KHTML, like Gecko) Version/7.0.1 Safari/537.73.11';
+        $agent = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
+        curl_setopt($ch, CURLOPT_USERAGENT, $agent);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+
+        $page_content = curl_exec($ch);
+
+        $corrected_url =  curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+
+        return self::normalise_url($corrected_url);
    }
 }
 
