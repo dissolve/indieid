@@ -17,14 +17,21 @@ if (get_magic_quotes_gpc()) {
   unset($process);
 }
 
-ob_start(); require_once dirname(__FILE__) . '/cassis/cassis.js'; ob_end_clean();
-require dirname(__FILE__) . '/tmhOAuth/tmhOAuth.php';
-require dirname(__FILE__) . '/config.php';
+require_once __DIR__.DIRECTORY_SEPARATOR.'cassis'.DIRECTORY_SEPARATOR.'cassis-loader.php'; 
+
+ob_start(); 
+// use composers autoload if it exists, or require directly if not
+if (file_exists(dirname(__DIR__).DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR.'autoload.php')) {
+  require dirname(__DIR__).DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR.'autoload.php';
+} else {
+  throw "Vendor libraries could not be found. have you tried installing with composer?";
+}
+require __DIR__.DIRECTORY_SEPARATOR.'config.php';
 
 class relmeauth {
   function __construct() {
     session_start();
-    $this->tmhOAuth = new tmhOAuth(array('curl_followlocation' => true));
+    //$this->tmhOAuth = new tmhOAuth(array('curl_followlocation' => true));
   }
 
   function is_loggedin() {
@@ -38,15 +45,11 @@ class relmeauth {
     $config = $providers[$_SESSION['relmeauth']['provider']];
 
     // create tmhOAuth from session info
-    $this->tmhOAuth = new tmhOAuth(array(
-    'consumer_key' => $config['keys']['consumer_key'],
-    'consumer_secret' => $config['keys']['consumer_secret'],
-    'user_token' => $_SESSION['relmeauth']['access']['oauth_token'],
-    'user_secret' => $_SESSION['relmeauth']['access']['oauth_token_secret']
-    ));
+    $token = $_SESSION['relmeauth']['access']['oauth_token'];
+    $secret = $_SESSION['relmeauth']['access']['oauth_token_secret'];
   }
 
-  function main($user_url, $askwrite) {
+  function get_supported_list($user_url) {
 
     //get the actual location of the URL
     $user_url = $this->deref_redirect($user_url);
@@ -54,7 +57,7 @@ class relmeauth {
     // first try to authenticate directly with the URL given
     if ($this->is_provider($user_url)) {
       $_SESSION['relmeauth']['direct'] = true;
-      if ($this->authenticate_url($user_url, $askwrite)) {
+      if ($this->authenticate_url($user_url)) {
         return true; // bail once something claims to authenticate
       }
       unset($_SESSION['relmeauth']['direct']);
@@ -64,136 +67,30 @@ class relmeauth {
     $source_rels = $this->discover($user_url);
 
     if ($source_rels==false || count($source_rels) == 0) {
-      return false; // no rel-me links found, bail
+      return array(); // no rel-me links found, bail
     }
 
-    // separate them into external and same domain
-    $external_rels = array();
-    $local_rels = array();
-    $user_site = parse_url($user_url);
-
-    foreach ($source_rels as $source_rel => $details) :
-      $provider = parse_url($source_rel);
-      if ($provider['host'] == $user_site['host']) {
-        $local_rels[$source_rel] = $details;
-      } else {
-        $external_rels[$source_rel] = $details;
-      }
-    endforeach; // source_rels
-
-    // see if any of the external rel-me URLs reciprocate - check rels in order
+    $results = array();
+    // see if any of the source rel-me URLs reciprocate - check rels in order
     // and then try authing it. needs to maintain more session state to resume.
-    foreach ($external_rels as $external_rel => $details):
+    foreach ($source_rels as $rel => $details):
       // only bother to confirm rel-me etc. if we know how to auth the dest.
-      if ($this->is_provider($external_rel) &&
-          $this->confirm_rel($user_url, $external_rel)) {
-        // We could keep this as a URL we actually try to auth, for debugging
-        if ($this->authenticate_url($external_rel, $askwrite)) {
-          return true; // bail once something claims to authenticate
-        }
+      if ($this->is_provider($rel) &&
+          $this->confirm_rel($user_url, $rel)) {
+        $results[$rel] = true;
+
+      } else {
+        $results[$rel] = false;
       }
-    endforeach; // external_rels
-
-    $source_rels = array_merge($local_rels, $external_rels);
-    $source2_tried = array();
-
-    // no external_rels, or none of them reciprocated or authed. try next level.
-    foreach ($source_rels as $source_rel => $details) :
-     // try rel-me-authing $source_rel,
-     // and test its respective external $source2_urls
-     // to match against $source_rel OR $user_url.
-
-      $source_rel_confirmed =
-          strpos($source_rel, $user_url)===0 ||
-          $this->confirm_rel($user_url, $source_rel);
-      // if $source_rel is a confirmed rel-me itself,
-      // then we'll allow for 2nd level to confirm to it
-
-      // then check its external_rels
-      $source2_rels = $this->discover($source_rel);
-      if ($source2_rels!=false) {
-        foreach ($source2_rels as $source2_rel => $details) :
-          $provider = parse_url($source2_rel);
-          if ($provider['host'] != $user_site['host'] &&
-              $this->is_provider($source2_rel))
-          {
-            $source2_tried[$source2_rel] = $details;
-            if ((!$source_rel_confirmed &&
-                 $this->confirm_rel($user_url, $source2_rel)) ||
-                ($source_rel_confirmed &&
-                 $this->confirms_rel($user_url, $source_rel, $source2_rel)))
-            {
-            // could keep this as a URL we actually try to auth, for debugging
-              if ($source_rel_confirmed) {
-                $_SESSION['relmeauth']['url2'] = $source_rel;
-              }
-              if ($this->authenticate_url($source2_rel, $askwrite)) {
-                // this exits if it succeeds. next statement unnecessary.
-                return true; // bail once something claims to authenticate
-              }
-              $_SESSION['relmeauth']['url2'] = '';
-            }
-          }
-        endforeach; // source_rels
-      }
-
-    // if successful, should have returned true, which can be returned
     endforeach; // source_rels
 
-/*
-    //debugging
-    $debugurls = $this->discover('http://twitter.com/kevinmarks/');
-
-    //end debugging
-*/
-
-    // otherwise, no URLs worked.
-    $source_rels = implode(', ', array_keys($source_rels)) .
-     ($source2_tried && count($source2_tried)>=0 ? ', ' .
-                           implode(', ', array_keys($source2_tried)) : '')
-/*
-     .
-     ($debugurls && count($debugurls)>=0 ? '. debug: ' .
-                           implode(', ', array_keys($debugurls)) : '')
-*/
-                           ;
-
-    $this->error('None of your providers are supported. Tried ' . $source_rels . '.');
-
-    return false;
-
-/*
-// old code that first confirmed all rel-me links, and then tried as a batch
-    // see if any of the relmes match back - we check the rels in the order
-    // they are listed in the HTML
-    $confirmed_rels = $this->confirm_rels($user_url, $source_rels);
-    if ($confirmed_rels != false) {
-      return $this->authenticate($confirmed_rels);
-    } else {
-      // error message will have already been set
-      return false;
+    if(empty($results)){
+        $this->error('None of your providers are supported. Tried ' . $source_rels . '.');
+        return array();
     }
-*/
+    return $results;
   }
 
-  function request($keys, $method, $url, $params=array(), $useauth=true) {
-    $this->tmhOAuth = new tmhOAuth(array());
-
-    $this->tmhOAuth->config['consumer_key']    = $keys['consumer_key'];
-    $this->tmhOAuth->config['consumer_secret'] = $keys['consumer_secret'];
-    $this->tmhOAuth->config['user_token']      = @$keys['user_token'];
-    $this->tmhOAuth->config['user_secret']     = @$keys['user_secret'];
-    echo "debug2:$method:$url:".print_r($params,true).":$userauth<br>";
-    $code = $this->tmhOAuth->request(
-      $method,
-      $url,
-      $params,
-      $useauth
-    );
-    echo 'debug3:'.$code.'<br>';
-
-    return ( $code == 200 );
-  }
 
 
   /**
@@ -226,43 +123,92 @@ class relmeauth {
    * @return false if authentication failed
    * @author Matt Harris and Tantek Çelik
    */
-  function authenticate_url($confirmed_rel, $askwrite=false) {
-      echo "called authenticate_url($confirmed_rel, $askwrite)<br>";
+  function authenticate_url($confirmed_rel) {
+    $provider = $this->provider_obj_for_url($confirmed_rel);
+
+    // If we don't have an authorization code then get one
+    $authUrl = $provider->getAuthorizationUrl();
+    $_SESSION['oauth2state'] = $provider->state;
+    header('Location: '.$authUrl);
+    exit;
+
+
+  }
+
+  function provider_obj_for_url($confirmed_rel){
     global $providers;
 
-    if (!$this->is_provider($confirmed_rel))
+    if (!$this->is_provider($confirmed_rel)){
       return false;
+    }
 
-    $provider = parse_url($confirmed_rel);
-      $config = $providers[ $provider['host'] ];
-      $ok = $this->request(
-        $config['keys'],
-        'GET',
-        $config['urls']['request'],
-        array(
-          'oauth_callback' => $this->here(),
-          'x_auth_access_type' => ($askwrite ? 'write' : 'read'), // http://dev.twitter.com/doc/post/oauth/request_token
-        )
-      );
+    $provider_parsed = parse_url($confirmed_rel);
+    $config = $providers[ $provider_parsed['host'] ];
+    switch($provider_parsed['host']){
+    case 'github.com':
+        $provider = new League\OAuth2\Client\Provider\Github([
+            'clientId'      => $config['client_id'],
+            'clientSecret'  => $config['client_secret'],
+            'redirectUri'   => $this->here(),
+            'scopes'        => [''],
+        ]);
+        break;
+    }
 
-      if ($ok) {
-        // need these later
-        $relpath = $provider['path'];
-        $user = $this->tmhOAuth->extract_params($this->tmhOAuth->response['response']);
+    return $provider;
+  }
 
-        $_SESSION['relmeauth']['provider'] = $provider['host'];
-        $_SESSION['relmeauth']['secret']   = $user['oauth_token_secret'];
-        $_SESSION['relmeauth']['token']    = $user['oauth_token'];
-      $url = ($askwrite ? $config['urls']['authorize']
-                        : $config['urls']['authenticate']) . '?'
-             . "oauth_token={$user['oauth_token']}";
-        $this->redirect($url);
-      return true;
-      } else {
-        $this->error("There was a problem communicating with {$provider['host']}. Error {$this->tmhOAuth->response['code']}. Please try later.");
-      }
+  function code_to_token($confirmed_rel, $code, $state){
 
-    return false;
+      $provider = $this->provider_obj_for_url($confirmed_rel);
+
+    if (empty($state) || ($state !== $_SESSION['oauth2state'])) {
+
+        unset($_SESSION['oauth2state']);
+        exit('Invalid state');
+
+    } else {
+
+        // Try to get an access token (using the authorization code grant)
+        $token = $provider->getAccessToken('authorization_code', [
+            'code' => $code
+        ]);
+
+        // Use this to interact with an API on the users behalf
+        //return $token->accessToken;
+        return $token;
+
+        // Use this to get a new access token if the old one expires
+        //echo $token->refreshToken;
+
+        // Unix timestamp of when the token will expire, and need refreshing
+        //echo $token->expires;
+    }
+
+    
+  }
+
+  function check_user_match($confirmed_rel, $token) {
+
+    $provider = $this->provider_obj_for_url($confirmed_rel);
+
+    $provider_parsed = parse_url($confirmed_rel);
+    switch($provider_parsed['host']){
+    case 'github.com':
+        try {
+            $userDetails = $provider->getUserDetails($token);
+            $path_exploded = explode("/", $provider_parsed['path']);
+
+            return ($path_exploded[1] == $userDetails->nickname);
+
+        } catch (Exception $e) {
+
+            // Failed to get user details
+            return false;
+        }
+
+    }
+
   }
 
   /**
@@ -288,6 +234,11 @@ class relmeauth {
 
     if ( ! array_key_exists($_SESSION['relmeauth']['provider'], $providers) ) {
       $this->error('None of your providers are supported, or you might have cookies disabled.  Make sure your browser preferences are set to accept cookies and try again.');
+      return false;
+    }
+
+    if ($_REQUEST['oauth_token'] !== $_SESSION['relmeauth']['token']) {
+      $this->error("The oauth token you started with is different to the one returned. try closing the tabs and making the requests again.");
       return false;
     }
 
@@ -473,18 +424,31 @@ class relmeauth {
   function discover($source_url, $titles=true) {
     global $providers;
 
-    $this->tmhOAuth->request('GET', $source_url, array(), false);
-    if ($this->tmhOAuth->response['code'] != 200) {
-      $this->error('Was expecting a 200 and instead got a '
-                   . $this->tmhOAuth->response['code']);
-      error_log('got an unexpected response from ' . $source_url . ', '
-      . json_encode($this->tmhOAuth->response));
-      return false;
-    }
+    //$this->tmhOAuth->request('GET', $source_url, array(), false);
+    //if ($this->tmhOAuth->response['code'] != 200) {
+      //$this->error('Was expecting a 200 and instead got a '
+                   //. $this->tmhOAuth->response['code']);
+      //error_log('got an unexpected response from ' . $source_url . ', '
+      //. json_encode($this->tmhOAuth->response));
+      //return false;
+    //}
+        $ch = curl_init($source_url);
+
+        if(!$ch){
+            $this->error('error with curl_init');
+            return $source_url;
+        }
+
+        $agent = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
+        curl_setopt($ch, CURLOPT_USERAGENT, $agent);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+
+        $page_content = curl_exec($ch);
 
     libxml_use_internal_errors(true); // silence HTML parser warnings
     $doc = new DOMDocument();
-    if ( ! $doc->loadHTML($this->tmhOAuth->response['response']) ) {
+    if ( ! $doc->loadHTML($page_content) ) {
       error_log('could not parse '.$source_url);
       $this->error('Looks like I can\'t do anything with ' . $source_url);
       return false;
@@ -749,6 +713,94 @@ class relmeauth {
 
         return self::normalise_url($corrected_url);
    }
+
+
+    function clear_expired_codes(){
+	    $files = glob(__DIR__ . '/codes/code.*');
+	    if ($files) {			
+            foreach ($files as $file) {
+                $time = substr(strrchr($file, '.'), 1);
+
+                if ($time < time()) {
+                    if (file_exists($file)) {
+                        unlink($file);
+                    }
+                }
+            }
+        }
+    }
+
+
+    function generate_code($redirect_uri, $client_id, $state, $scope, $me){
+    //generate and store this data and a code,
+        //return code
+	    $expire = 120;  //2 minutes
+
+
+        // seed with microseconds
+        list($usec, $sec) = explode(' ', microtime());
+        srand((float) $sec + ((float) $usec * 100000));
+        $randval = rand();
+        
+        $code = md5($randval . $redirect_uri . $client_id . $state . $scope . $me);
+
+        $code_data = array('code' => $code, 
+            'redirect_uri' => $redirect_uri ,
+            'client_id' => $client_id ,
+            'state' => $state ,
+            'scope' => $scope ,
+            'me' => $me);
+
+        $checksum = md5($code . $client_id. $redirect_uri);
+		$file = __DIR__ . '/codes/code.' . preg_replace('/[^A-Z0-9\._-]/i', '', $client_id.'.'.$redirect_uri.'.'.$checksum) . '.' . (time() + $expire);
+		$handle = fopen($file, 'w');
+		fwrite($handle, serialize($code_data));
+
+        return $code;
+    }
+    function validate_code($code, $redirect_uri, $client_id, $state){
+        //validate this data matches stored code
+        //if successful
+        //  invalidate code as it has been used
+        //  set headers and respond correctly (200 etc)
+        $this->clear_expired_codes();
+        $checksum = md5($code . $client_id. $redirect_uri);
+		$files = glob( __DIR__ . '/codes/code.' . preg_replace('/[^A-Z0-9\._-]/i', '', $client_id.'.'.$redirect_uri.'.'.$checksum) . '.*');
+		if ($files) {
+			$handle = fopen($files[0], 'r');
+      		
+			$code_data_serialized = fread($handle, filesize($files[0]));
+			
+			fclose($handle);
+
+		
+			$code_data =  unserialize($code_data_serialized);
+            if($code_data['code'] == $code && $code_data['client_id'] == $client_id && $code_data['state'] == $state){
+                //TODO: return correct header
+                header('HTTP/1.1 200 OK');
+                header('Content-Type: application/x-www-form-urlencoded');
+                echo 'me='.urlencode($code_data['me']) ;
+                if($code_data['scope']){
+                    echo '&scope='.urlencode($code_data['scope']) ;
+                } else {
+                    // we have used this code, we throw it away
+                    unlink($files[0]);
+                }
+                exit();
+            } else {
+                //TODO: return some error header
+                header('HTTP/1.1 500 OK');
+                echo 'debug 2';
+                exit();
+            }
+		} else {
+            //TODO: return some error header
+                header('HTTP/1.1 500 OK');
+                echo 'debug 1' ."\n"; 
+
+            exit();
+        }
+    }
 }
 
 ?>
