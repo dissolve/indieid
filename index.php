@@ -3,6 +3,7 @@
 require_once( __DIR__ . '/lib/relmeauth.php');
 $relmeauth = new relmeauth();
 $error = false;
+header('IndieAuth: authorization_endpoint');
 
 if ( isset($_GET['code']) ) {
     // this is the code from the redirect from rel-me-auth provider
