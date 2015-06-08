@@ -142,7 +142,11 @@ class relmeauth {
       return false;
     }
 
+
     $provider_parsed = parse_url($confirmed_rel);
+    if (strpos($provider_parsed['host'], 'www.')===0) {
+      $provider_parsed['host'] = substr($provider_parsed['host'],4);
+    }
     $config = $providers[ $provider_parsed['host'] ];
     switch($provider_parsed['host']){
     case 'github.com':
@@ -151,6 +155,29 @@ class relmeauth {
             'clientSecret'  => $config['client_secret'],
             'redirectUri'   => $this->here(),
             'scopes'        => [''],
+        ]);
+        break;
+    case 'google.com':
+        $provider = new League\OAuth2\Client\Provider\Google([
+            'clientId'      => $config['client_id'],
+            'clientSecret'  => $config['client_secret'],
+            'redirectUri'   => $this->here()
+        ]);
+        break;
+    case 'instagram.com':
+        $provider = new League\OAuth2\Client\Provider\Instagram([
+            'clientId'      => $config['client_id'],
+            'clientSecret'  => $config['client_secret'],
+            'redirectUri'   => $this->here()
+        ]);
+        break;
+    case 'facebook.com':
+        $provider = new League\OAuth2\Client\Provider\Facebook([
+            'clientId'      => $config['client_id'],
+            'clientSecret'  => $config['client_secret'],
+            'graphApiVersion' => $config['graph_api_version'],
+            'redirectUri'   => $this->here(),
+            'scopes'        => ['website'],
         ]);
         break;
     }
@@ -193,8 +220,12 @@ class relmeauth {
     $provider = $this->provider_obj_for_url($confirmed_rel);
 
     $provider_parsed = parse_url($confirmed_rel);
+    if (strpos($provider_parsed['host'], 'www.')===0) {
+      $provider_parsed['host'] = substr($provider_parsed['host'],4);
+    }
     switch($provider_parsed['host']){
     case 'github.com':
+    case 'instagram.com':
         try {
             $userDetails = $provider->getUserDetails($token);
             $path_exploded = explode("/", $provider_parsed['path']);
@@ -206,6 +237,42 @@ class relmeauth {
             // Failed to get user details
             return false;
         }
+        break;
+    case 'google.com':
+        try {
+            $userDetails = $provider->getUserDetails($token);
+            $path_exploded = explode("/", $provider_parsed['path']);
+
+            $user_url = $this->deref_redirect('https://plus.google.com/'.$userDetails->uid);
+            $user_parsed = parse_url($user_url);
+            $user_path = $user_parsed['path'];
+            $user_path_exploded = explode("/", $user_path);
+
+            return (strtolower($path_exploded[1]) == strtolower($user_path_exploded[1]));
+
+        } catch (Exception $e) {
+
+            // Failed to get user details
+            return false;
+        }
+        break;
+    case 'facebook.com':
+        try {
+            $userDetails = $provider->getUserDetails($token);
+            $path_exploded = explode("/", $provider_parsed['path']);
+
+            //TODO Need to get user_website get access from facebook :/
+            //echo "<pre>".print_r($userDetails, true)."</pre>";
+            //die();
+
+            return ( $loc  == $confirmed_rel);
+
+        } catch (Exception $e) {
+
+            // Failed to get user details
+            return false;
+        }
+        break;
 
     }
 
@@ -349,17 +416,78 @@ class relmeauth {
    * @author Matt Harris and Tantek Çelik
    */
   function confirm_rel($user_url, $source_rel) {
-    $othermes = $this->discover($source_rel, false);
-    $_SESSION['relmeauth']['debug']['source_rels'][$source_rel] = $othermes;
-    if (is_array( $othermes)) {
+    
+    //$provider = $this->provider_obj_for_url($confirmed_rel);
+
+    $source_parsed = parse_url($source_rel);
+    if (strpos($source_parsed['host'], 'www.')===0) {
+      $source_parsed['host'] = substr($source_parsed['host'],4);
+    }
+
+    //print_r($source_parsed)
+    //echo $source_parsed['host'] . '<br>';
+
+    switch($source_parsed['host']){
+    case 'facebook.com':
+      $othermes = $this->discover($source_rel, false);
+      $_SESSION['relmeauth']['debug']['source_rels'][$source_rel] = $othermes;
       $othermes = array_map(array('relmeauth', 'deref_redirect'), $othermes);
       $user_url = self::normalise_url($user_url);
+      if (is_array( $othermes)) {
+        $user_url = strtolower('https://www.facebook.com/l.php?u='.urlencode($user_url).'&h=');
+        foreach($othermes as $otherme){
+          if(strpos($otherme, $user_url) === 0){
+            return true;
+          }
+        }
+      }
+      break;
 
-      if (in_array($user_url, $othermes)) {
-        $_SESSION['relmeauth']['debug']['matched'][] = $source_rel;
+    case 'instagram.com':
+      $user_url = self::normalise_url($user_url);
+
+      $ch = curl_init($source_rel);
+
+      if(!$ch){
+        $this->error('error with curl_init');
+        return false;
+      }
+
+      //$agent = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
+      //curl_setopt($ch, CURLOPT_USERAGENT, $agent);
+      curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+
+      $page_content = curl_exec($ch);
+
+      $matches = array();
+      preg_match('/"website"\s*:\s*"([^"]+)"/i', $page_content, $matches);
+      if(!isset($matches[0])){
+          return false;
+      }
+
+      $input = '{'.$matches[0]. '}';
+      $parsed_json = json_decode($input);
+      $otherme = $parsed_json->website;
+      if(strpos($otherme, $user_url) === 0){
         return true;
       }
+      break;
+
+    default:
+      $othermes = $this->discover($source_rel, false);
+      $_SESSION['relmeauth']['debug']['source_rels'][$source_rel] = $othermes;
+      $othermes = array_map(array('relmeauth', 'deref_redirect'), $othermes);
+      $user_url = self::normalise_url($user_url);
+      if (is_array( $othermes)) {
+        if (in_array($user_url, $othermes)) {
+          $_SESSION['relmeauth']['debug']['matched'][] = $source_rel;
+          return true;
+        }
+      }
+      break;
     }
+
     return false;
   }
 

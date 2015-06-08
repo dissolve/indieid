@@ -11,6 +11,7 @@ if ( isset($_GET['code']) ) {
     // and then confirm the user is who they are supposed to be
     $provider_url = $_SESSION['relmeauth']['provider_url'];
     $token = $relmeauth->code_to_token( $provider_url, $_GET['code'], $_GET['state']);
+    //echo $provider_url . ' ' . $token;
     $success = $relmeauth->check_user_match( $provider_url, $token);
     if($success && isset($_SESSION['relmeauth']['redirect_uri'])){
 
@@ -195,7 +196,7 @@ if ( isset($_GET['code']) ) {
 <body>
   <h1>RelMeAuth prototype</h1>
 <?php if ($success) { ?>
-  <p>SUCCESS! You verified</p>
+<p>SUCCESS! You verified as <?php echo $_SESSION['relmeauth']['url'] ?> </p>
 <?php } /*endif;*/ ?>
 
       <?php $relmeauth->printError(); ?>
@@ -217,9 +218,9 @@ if ( isset($_GET['code']) ) {
         <p>Found these rel-me links
             <?php foreach($list as $url => $supported){
                 if($supported){?>
-                    <a class="supported" href="?use=<?php echo urlencode($url)?>">
+                    <div><a class="supported" href="?use=<?php echo urlencode($url)?>">
                         <?php echo $url?>
-                    </a>
+                    </a></div>
                 <?php } else { ?>
                     <div class="not-supported">
                         <?php echo $url?>
@@ -235,7 +236,7 @@ if ( isset($_GET['code']) ) {
         <p>This is only a test.</p>
         <p>Enter your personal web address, click Sign In, and see what happens.</p>
 
-        <form action="" method="POST">
+        <form action="/" method="POST">
           <label for="url">Your domain:</label>
           <input type="url" required="required" name="url" id="url" style="width:17em"
             autofocus="autofocus"
