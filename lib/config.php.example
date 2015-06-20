@@ -1,0 +1,30 @@
+<?php
+
+$providers = array(
+  'github.com' => array(
+    'client_id'    => 'CLIENT_ID', // YOUR_CLIENT_ID
+    'client_secret' => 'CLIENT_SECRET', // YOUR_CLIENT_SECRET
+    'rtrimprofile' => '/',
+    'ltrimdomain' => 'www.'
+  ),
+  'instagram.com' => array(
+    'client_id'    => 'CLIENT_ID', // YOUR_CLIENT_ID
+    'client_secret' => 'CLIENT_SECRET', // YOUR_CLIENT_SECRET
+    'rtrimprofile' => '/',
+    'ltrimdomain' => 'www.'
+  ),
+  'google.com' => array(
+    'client_id'    => 'CLIENT_ID', // YOUR_CLIENT_ID
+    'client_secret' => 'CLIENT_SECRET', // YOUR_CLIENT_SECRET
+    'rtrimprofile' => '/',
+    'ltrimdomain' => 'www.'
+  ),
+  'facebook.com' => array(
+    'client_id'    => 'CLIENT_ID', // YOUR_CLIENT_ID
+    'client_secret' => 'CLIENT_SECRET', // YOUR_CLIENT_SECRET
+    'rtrimprofile' => '/',
+    'ltrimdomain' => 'www.'
+  )
+);
+
+?>

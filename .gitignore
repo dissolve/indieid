@@ -1,3 +1,4 @@
 vendor/
+lib/config.php
 *.swp
 *.bak
