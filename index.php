@@ -146,7 +146,7 @@ if ( isset($_GET['code']) ) {
 <html lang="en-US">
 <head>
   <meta charset="utf-8" />
-  <title>RelMeAuth prototype</title>
+  <title>IndieID</title>
   <script src="cassis/cassis.js" type="text/javascript" charset="utf-8"></script>
   <style type="text/css" media="all">
     body {
@@ -194,7 +194,8 @@ if ( isset($_GET['code']) ) {
 </head>
 
 <body>
-  <h1>RelMeAuth prototype</h1>
+  <h1>IndieID</h1>
+<img src="img/indieid-mug.svg" />
 <?php if ($success) { ?>
 <p>SUCCESS! You verified as <?php echo $_SESSION['relmeauth']['url'] ?> </p>
 <?php } /*endif;*/ ?>
@@ -229,12 +230,10 @@ if ( isset($_GET['code']) ) {
             <?php } //end foreach url ?>
         </p>
       <?php } else { ?>
-        <p>This is a working prototype of <a href="http://microformats.org/wiki/RelMeAuth">RelMeAuth</a>.</p>
-        <p>This is purely a test user interface. If this had been an actual user interface,
-          you wouldn't be wondering what the hell is going on, what is "my domain",
-          who am I, and why do I exist.</p>
-        <p>This is only a test.</p>
-        <p>Enter your personal web address, click Sign In, and see what happens.</p>
+        <p>IndieID is an implementation of the <a href="http://indiewebcamp.com/IndieAuthProtocol">IndieAuth Protocol</a>.</p>
+        <p>This current login box is only for testing ability to login.  If you wish to set up IndieID for login to your site,
+           take a look at <a href="http://indiewebcamp.com/How_to_set_up_web_sign-in_on_your_own_domain">How to set up web sign-in</a> </p>
+
 
         <form action="/" method="POST">
           <label for="url">Your domain:</label>
@@ -247,7 +246,7 @@ if ( isset($_GET['code']) ) {
 
 
   <p>It is likely there are still errors and any issues should be reported on the
-  <a href="http://github.com/dissolve/RelMeAuth">GitHub Project Page</a>. This code is maintained by
+  <a href="http://github.com/dissolve/indieid">GitHub Project Page</a>. This code is maintained by
   @<a href="https://twitter.com/dissolve333" rel="me">dissolve333</a> </p>
 
 </body>
