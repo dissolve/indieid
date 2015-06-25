@@ -171,15 +171,6 @@ class relmeauth {
             'redirectUri'   => $this->here()
         ]);
         break;
-    case 'facebook.com':
-        $provider = new League\OAuth2\Client\Provider\Facebook([
-            'clientId'      => $config['client_id'],
-            'clientSecret'  => $config['client_secret'],
-            'graphApiVersion' => $config['graph_api_version'],
-            'redirectUri'   => $this->here(),
-            'scopes'        => ['website'],
-        ]);
-        break;
     }
 
     return $provider;
@@ -249,23 +240,6 @@ class relmeauth {
             $user_path_exploded = explode("/", $user_path);
 
             return (strtolower($path_exploded[1]) == strtolower($user_path_exploded[1]));
-
-        } catch (Exception $e) {
-
-            // Failed to get user details
-            return false;
-        }
-        break;
-    case 'facebook.com':
-        try {
-            $userDetails = $provider->getUserDetails($token);
-            $path_exploded = explode("/", $provider_parsed['path']);
-
-            //TODO Need to get user_website get access from facebook :/
-            //echo "<pre>".print_r($userDetails, true)."</pre>";
-            //die();
-
-            return ( $loc  == $confirmed_rel);
 
         } catch (Exception $e) {
 
@@ -428,21 +402,6 @@ class relmeauth {
     //echo $source_parsed['host'] . '<br>';
 
     switch($source_parsed['host']){
-    case 'facebook.com':
-      $othermes = $this->discover($source_rel, false);
-      $_SESSION['relmeauth']['debug']['source_rels'][$source_rel] = $othermes;
-      $othermes = array_map(array('relmeauth', 'deref_redirect'), $othermes);
-      $user_url = self::normalise_url($user_url);
-      if (is_array( $othermes)) {
-        $user_url = strtolower('https://www.facebook.com/l.php?u='.urlencode($user_url).'&h=');
-        foreach($othermes as $otherme){
-          if(strpos($otherme, $user_url) === 0){
-            return true;
-          }
-        }
-      }
-      break;
-
     case 'instagram.com':
       $user_url = self::normalise_url($user_url);
 
@@ -461,14 +420,14 @@ class relmeauth {
       $page_content = curl_exec($ch);
 
       $matches = array();
-      preg_match('/"website"\s*:\s*"([^"]+)"/i', $page_content, $matches);
+      preg_match('/"external_url"\s*:\s*"([^"]+)"/i', $page_content, $matches);
       if(!isset($matches[0])){
           return false;
       }
 
       $input = '{'.$matches[0]. '}';
       $parsed_json = json_decode($input);
-      $otherme = $parsed_json->website;
+      $otherme = $parsed_json->external_url;
       if(strpos($otherme, $user_url) === 0){
         return true;
       }
