@@ -1,7 +1,7 @@
-@RelMeAuth
+@IndieID
 ========
 
-A PHP implementation of the [IndieAuth Protocol](http://indiewebcamp.com/IndieAuthProtocol).
+A PHP implementation of [IndieAuth](http://indiewebcamp.com/IndieAuth).
 See [@dissolve333 on Twitter](http://twitter.com/dissolve)
 
 SubModules
